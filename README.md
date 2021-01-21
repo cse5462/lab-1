@@ -28,6 +28,8 @@ ASSUMPTIONS:
 - It is required that the length of the search-string be
   <= the file chunking size, however it is recommended
   that the chunks be 5x larger than the search string.
+- It is assumed that if a file has been opened
+  successfully, there will be no read/write issues that
+  occur when performing these operations.
 - It is assumed that the number of matches found is <=
   the max SIGNED INT value.
-- TODO

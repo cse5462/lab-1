@@ -48,7 +48,7 @@ int main(int argc, char *argv[]) {
 
 	/* Check for the correct number of command line arguments */
 	if (argc == NUM_ARGS) {
-		/* Extract arguments to their respective variables */
+		/* If arg count correct, extract arguments to their respective variables */
 		strcpy(inputFilename, argv[1]);
 		strcpy(searchStr, argv[2]);
 		strcpy(outputFilename, argv[3]);
@@ -128,7 +128,8 @@ long get_file_size(FILE *file) {
 }
 
 /**
- * @brief TODO file_string_match
+ * @brief Searches the given file for all occurences of the provided search string and returns
+ * the number of matches found.
  * 
  * @param file The pointer to a FILE object.
  * @param str The search string to match.
@@ -143,8 +144,11 @@ int file_string_match(FILE *file, const char *str) {
 	/* Reads the file in chunks and counts the total string matches found */
 	do {
 		int i;
+		/* Rescans ending partial string match to beginning of buffer */
 		for (i = 0; i < offset; i++) buffer[i] = buffer[BUFFER_LEN-(offset-i)];
+		/* Fills remaining space in buffer from file */
 		rc = fread(buffer+offset, sizeof(char), BUFFER_LEN-offset, file) + offset;
+		/* Search for string matches in buffer and update offset if ending partial match found */
 		matches += buffer_string_match(buffer, str, rc, strLength, &offset);
 	} while (rc == BUFFER_LEN);
 
@@ -152,56 +156,75 @@ int file_string_match(FILE *file, const char *str) {
 }
 
 /**
- * @brief TODO buffer_string_match
+ * @brief Searches the given buffer for all occurences of the provided search string and returns
+ * the number of matches found. If a partial match is found at the end of the buffer, the offset
+ * value is updated to allow it to be rescanned into the beginning of the next buffer.
  * 
- * @param buffer The pointer to the character buffer containing the file chunk to search.
+ * @param buffer The character buffer containing the file chunk to search.
  * @param str The search string to match.
  * @param buffLength The length of the character buffer.
  * @param strLength The length of the search string.
+ * @param offset The pointer to the rescan offset amount for the next buffer.
  * @return The number of matches found in the buffer.
  */
 int buffer_string_match(const char *buffer, const char *str, int buffLength, int strLength, int *offset) {
 	int i = 0, rescanPos = 0, matches = 0;
 
+	/* Searches buffer an counts the total string matches found */
 	while (i < buffLength) {
-		/* TODO */
+		/* Set rescan position to the position after the current one */
 		rescanPos = i + 1;
-		/* TODO */
+		/* Search current position for string match */
 		if (string_match(buffer, str, buffLength, strLength, &i, &rescanPos)) matches++;
+		/* Move current position to next possible string match */
 		if (i < buffLength) i = rescanPos;
 	}
+	/* Update offset to allow partial match at end of buffer to be rescanned into the beginning
+	 * of the next buffer */
 	*offset = buffLength - rescanPos;
 
 	return matches;
 }
 
 /**
- * @brief TODO string_match
+ * @brief Checks if there is a match with the search string in yhe given buffer at the current
+ * position. The current position in the buffer is updated as the search is performed and the
+ * rescan position is updated if a new possible match is found during the search.
  * 
- * @param buffer The pointer to the character buffer containing the file chunk to search.
+ * @param buffer The character buffer containing the file chunk to search.
  * @param str The search string to match.
  * @param buffLength The length of the character buffer.
  * @param strLength The length of the search string.
- * @param indx The current index in the character buffer.
- * @param rescanPos TODO
+ * @param indx The pointer to the current index in the character buffer.
+ * @param rescanPos The pointer to the current position to rescan to in the character buffer.
  * @return True (non-zero) if the current index begins a string that is a match with the search
  * string, false (zero) otherwise.
  */
 int string_match(const char *buffer, const char *str, int buffLength, int strLength, int *indx, int *rescanPos) {
 	int newRescanPos = 0, strPos = 0;
+	/* Initializes isMatch to whether the current character in the buffer matches the first character
+	 * in the search string */
 	int isMatch = (buffer[(*indx)++] == (str[strPos++] & 0xff)) ? 1 : 0;
 
+	/* Keep checking string macth if first character was a match and search string isn't a sinlge character */
 	if (strLength > 1) {
 		while (isMatch && strPos < strLength) {
 			if (*indx < buffLength) {
+				/* Update new rescan position if new possible match has been found and new rescan
+				 * hasn't been found yet */
 				if (!newRescanPos && (buffer[*indx] == (str[0] & 0xff))) newRescanPos = *indx;
+				/* If bad character match found, current position isn't a match */
 				if (buffer[(*indx)++] != (str[(strPos)++] & 0xff)) isMatch = 0;
 			} else {
+				/* If partial match found at end of buffer, update new rescan position to the beginning
+				 * of the partial match */
 				if (isMatch) newRescanPos = (*rescanPos)-1;
+				/* Isn't a match in the current buffer */
 				isMatch = 0;
 			}
 		}
 	}
+	/* Updates position to rescan to if new one was found, otherwise sets it to the current index */
 	*rescanPos = (newRescanPos) ? newRescanPos : *indx;
 	
 	return isMatch;
