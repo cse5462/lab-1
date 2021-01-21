@@ -12,7 +12,7 @@ count: count.c
 	$(CC) $(CFLAGS) -o $@ $^
 
 # Target to open lab source code files
-openCode: makefile count.c
+openCode: README.md makefile count.c
 	code $^
 	
 # Target to open lab files
