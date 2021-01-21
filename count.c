@@ -5,9 +5,9 @@
 
 /* The number of command line arguments. */
 #define NUM_ARGS 4
-/* The maximum number of character for file names. */
+/* The maximum number of characters for file names. */
 #define FILENAME_LEN 20
-/* The maximum number of character for error messages. */
+/* The maximum number of characters for error messages. */
 #define ERROR_LEN 150
 /* The maximum size (in bytes) of the search string. */
 #define SEARCH_MAX 20
@@ -16,10 +16,10 @@
 #define BUFFER_LEN 100
 
 void handle_init_error(const char *msg, int errnoSet);
-long int get_file_size(FILE *file);
+long get_file_size(FILE *file);
 int file_string_match(FILE *inputFile, const char *str);
-int buffer_string_match(const char *buffer, const char *str, int buffLength, int strLength);
-int string_match(const char *buffer, const char *str, int buffLength, int strLength, int *indx, int *strPos, int *rescanPos);
+int buffer_string_match(const char *buffer, const char *str, int buffLength, int strLength, int *offset);
+int string_match(const char *buffer, const char *str, int buffLength, int strLength, int *indx, int *rescanPos);
 void print_stats(FILE *stream, long int size, int matches);
 
 /**
@@ -115,9 +115,8 @@ void handle_init_error(const char *msg, int errnum) {
  * @param file The pointer to a FILE object.
  * @return The file size in bytes.
  */
-long int get_file_size(FILE *file) {
-	long int size;
-
+long get_file_size(FILE *file) {
+	long size;
 	/* Set position to end of file */
 	fseek(file, 0, SEEK_END);
 	/* Get current byte position */
@@ -136,15 +135,17 @@ long int get_file_size(FILE *file) {
  * @return The number of matches found in the file.
  */
 int file_string_match(FILE *file, const char *str) {
-	int rc, strLength, matches = 0;
-	char buffer[BUFFER_LEN];
+	int rc, strLength, offset = 0, matches = 0;
+	char buffer[BUFFER_LEN] = {0};
 	
 	/* Gets the length of the search string */
 	strLength = (rc = strlen(str)) < SEARCH_MAX ? rc : SEARCH_MAX;
 	/* Reads the file in chunks and counts the total string matches found */
 	do {
-		rc = fread(buffer, sizeof(char), BUFFER_LEN, file);
-		matches += buffer_string_match(buffer, str, rc, strLength);
+		int i;
+		for (i = 0; i < offset; i++) buffer[i] = buffer[BUFFER_LEN-(offset-i)];
+		rc = fread(buffer+offset, sizeof(char), BUFFER_LEN-offset, file) + offset;
+		matches += buffer_string_match(buffer, str, rc, strLength, &offset);
 	} while (rc == BUFFER_LEN);
 
 	return matches;
@@ -154,31 +155,22 @@ int file_string_match(FILE *file, const char *str) {
  * @brief TODO buffer_string_match
  * 
  * @param buffer The pointer to the character buffer containing the file chunk to search.
- * @param str The string to match.
+ * @param str The search string to match.
  * @param buffLength The length of the character buffer.
  * @param strLength The length of the search string.
  * @return The number of matches found in the buffer.
  */
-int buffer_string_match(const char *buffer, const char *str, int buffLength, int strLength) {
-	static int strPos = 0;
-	int i = 0, matches = 0;
+int buffer_string_match(const char *buffer, const char *str, int buffLength, int strLength, int *offset) {
+	int i = 0, rescanPos = 0, matches = 0;
 
 	while (i < buffLength) {
 		/* TODO */
-		int rescanPos = i + 1;
+		rescanPos = i + 1;
 		/* TODO */
-		if (string_match(buffer, str, buffLength, strLength, &i, &strPos, &rescanPos)) {
-			matches++;
-		}
-		/* TODO */
-		if (i != buffLength) {
-			strPos = 0;
-			i = rescanPos;
-		} else {
-			if (strPos == strLength || buffer[i-1] != (str[strPos-1] & 0xff)) strPos = 0;
-		}
-
+		if (string_match(buffer, str, buffLength, strLength, &i, &rescanPos)) matches++;
+		if (i < buffLength) i = rescanPos;
 	}
+	*offset = buffLength - rescanPos;
 
 	return matches;
 }
@@ -191,27 +183,28 @@ int buffer_string_match(const char *buffer, const char *str, int buffLength, int
  * @param buffLength The length of the character buffer.
  * @param strLength The length of the search string.
  * @param indx The current index in the character buffer.
- * @param strPos TODO
  * @param rescanPos TODO
- * @return TODO
+ * @return True (non-zero) if the current index begins a string that is a match with the search
+ * string, false (zero) otherwise.
  */
-int string_match(const char *buffer, const char *str, int buffLength, int strLength, int *indx, int *strPos, int *rescanPos) {
-	int newRescanPos = 0;
-	int possibleMatch = (buffer[(*indx)++] == (str[(*strPos)++] & 0xff)) ? 1 : 0;
+int string_match(const char *buffer, const char *str, int buffLength, int strLength, int *indx, int *rescanPos) {
+	int newRescanPos = 0, strPos = 0;
+	int isMatch = (buffer[(*indx)++] == (str[strPos++] & 0xff)) ? 1 : 0;
 
-	while (possibleMatch && *strPos < strLength) {
-		if (*indx == buffLength) {
-			possibleMatch = 0;
-		} else {
-			if (!newRescanPos && (buffer[*indx] == (str[0] & 0xff))) newRescanPos = *indx;
-			if (buffer[(*indx)++] != (str[(*strPos)++] & 0xff)) possibleMatch = 0;
-		}
-		if (!possibleMatch || (*strPos == strLength)) {
-			*rescanPos = (newRescanPos) ? newRescanPos : *indx;
+	if (strLength > 1) {
+		while (isMatch && strPos < strLength) {
+			if (*indx < buffLength) {
+				if (!newRescanPos && (buffer[*indx] == (str[0] & 0xff))) newRescanPos = *indx;
+				if (buffer[(*indx)++] != (str[(strPos)++] & 0xff)) isMatch = 0;
+			} else {
+				if (isMatch) newRescanPos = (*rescanPos)-1;
+				isMatch = 0;
+			}
 		}
 	}
+	*rescanPos = (newRescanPos) ? newRescanPos : *indx;
 	
-	return possibleMatch;
+	return isMatch;
 }
 
 /**
